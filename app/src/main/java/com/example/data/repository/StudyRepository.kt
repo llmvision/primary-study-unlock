@@ -1,9 +1,9 @@
 package com.example.data.repository
 
 import com.example.data.local.AnswerLogEntity
+import com.example.data.local.BankQuestionDao
 import com.example.data.local.LearningPathDao
 import com.example.data.local.LearningPlanEntity
-import com.example.data.local.SubjectStatResult
 import com.example.data.local.UnlockRecordDao
 import com.example.data.local.UnlockRecordEntity
 import com.example.data.local.WrongQuestionDao
@@ -13,14 +13,19 @@ import com.example.data.model.Grade
 import com.example.data.model.Question
 import com.example.data.model.RecommendedPractice
 import com.example.data.model.Subject
+import com.example.data.repository.ExpandedQuestionData.toEntity
+import com.example.data.repository.ExpandedQuestionData.toModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 class StudyRepository(
     private val wrongQuestionDao: WrongQuestionDao,
     private val unlockRecordDao: UnlockRecordDao,
-    private val learningPathDao: LearningPathDao
+    private val learningPathDao: LearningPathDao,
+    private val bankQuestionDao: BankQuestionDao
 ) {
     val activeWrongQuestions: Flow<List<WrongQuestionEntity>> =
         wrongQuestionDao.getActiveWrongQuestions()
@@ -43,8 +48,83 @@ class StudyRepository(
     val currentLearningPlan: Flow<LearningPlanEntity?> =
         learningPathDao.getLearningPlanFlow()
 
+    val totalBankCount: Flow<Int> =
+        bankQuestionDao.getCountFlow()
+
+    // Initialize Question Database with pre-bundled questions if empty
+    suspend fun initializeQuestionBankIfNeeded() {
+        withContext(Dispatchers.IO) {
+            val count = bankQuestionDao.getCount()
+            if (count == 0) {
+                // Populate base questions from QuestionBank
+                val entities = QuestionBank.allQuestions.map { it.toEntity(isRemote = false) }
+                bankQuestionDao.insertAll(entities)
+            }
+        }
+    }
+
+    // Sync / Update Questions from cloud/online mock service
+    suspend fun syncOnlineQuestionBank(): Result<Int> {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Simulate an online API fetch delay and get latest curriculum questions
+                kotlinx.coroutines.delay(1200)
+
+                // Combine extra curated expansion questions + new curriculum sync items
+                val latestFromCloud = ExpandedQuestionData.extraCuratedQuestions.map {
+                    it.toEntity(isRemote = true)
+                }
+
+                bankQuestionDao.insertAll(latestFromCloud)
+                val totalCount = bankQuestionDao.getCount()
+                Result.success(totalCount)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun getQuestionsForGrade(grade: Grade): List<Question> {
+        return withContext(Dispatchers.IO) {
+            val entities = bankQuestionDao.getQuestionsByGrade(grade.level)
+            if (entities.isNotEmpty()) {
+                entities.map { it.toModel() }
+            } else {
+                QuestionBank.getQuestionsByGrade(grade)
+            }
+        }
+    }
+
+    fun getQuestionsForGradeFlow(grade: Grade): Flow<List<Question>> {
+        return bankQuestionDao.getQuestionsByGradeFlow(grade.level).map { entities ->
+            if (entities.isNotEmpty()) {
+                entities.map { it.toModel() }
+            } else {
+                QuestionBank.getQuestionsByGrade(grade)
+            }
+        }
+    }
+
+    suspend fun getRandomQuiz(grade: Grade, count: Int = 3): List<Question> {
+        val gradeQuestions = getQuestionsForGrade(grade)
+        val chinese = gradeQuestions.filter { it.subject == Subject.CHINESE_ESSAY }.shuffled()
+        val math = gradeQuestions.filter { it.subject == Subject.MATH }.shuffled()
+        val english = gradeQuestions.filter { it.subject == Subject.ENGLISH }.shuffled()
+
+        val list = mutableListOf<Question>()
+        if (chinese.isNotEmpty()) list.add(chinese.first())
+        if (math.isNotEmpty()) list.add(math.first())
+        if (english.isNotEmpty()) list.add(english.first())
+
+        val remaining = gradeQuestions.filterNot { list.contains(it) }.shuffled()
+        for (q in remaining) {
+            if (list.size >= count) break
+            list.add(q)
+        }
+        return list.take(count).shuffled()
+    }
+
     suspend fun recordAnswerResult(question: Question, selectedIndex: Int, isCorrect: Boolean) {
-        // Record in Answer Logs for precise accuracy & trend analysis
         learningPathDao.insertAnswerLog(
             AnswerLogEntity(
                 questionId = question.id,
@@ -55,7 +135,6 @@ class StudyRepository(
             )
         )
 
-        // Record in Wrong Questions if incorrect
         if (!isCorrect) {
             val existing = wrongQuestionDao.getWrongQuestionById(question.id)
             val wrongCount = (existing?.wrongCount ?: 0) + 1
@@ -125,7 +204,6 @@ class StudyRepository(
                 }
             }
 
-            // Identify weakest and strongest
             var weakSubj: Subject? = null
             var strongSubj: Subject? = null
 
@@ -204,8 +282,8 @@ class StudyRepository(
         learningPathDao.saveLearningPlan(plan)
     }
 
-    fun getAdaptiveRecommendations(diagnostic: DiagnosticResult): List<RecommendedPractice> {
-        val gradeQuestions = QuestionBank.getQuestionsByGrade(diagnostic.grade)
+    suspend fun getAdaptiveRecommendations(diagnostic: DiagnosticResult): List<RecommendedPractice> {
+        val gradeQuestions = getQuestionsForGrade(diagnostic.grade)
         val result = mutableListOf<RecommendedPractice>()
 
         // 1. Weak Subject Targeted Practice
@@ -232,7 +310,7 @@ class StudyRepository(
                     title = "⚡ 思维拓展：${otherSubject.label}高频考点演练",
                     subject = otherSubject,
                     difficulty = "能力进阶",
-                    reason = "紧扣${diagnostic.grade.label}新课标重点题型，帮助孩子拓宽学科思维",
+                    reason = "紧扣${diagnostic.grade.label}重点题型，帮助孩子拓宽学科思维",
                     questions = highFreqQuestions
                 )
             )

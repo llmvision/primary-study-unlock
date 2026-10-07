@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -40,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.lifecycle.lifecycleScope
 import com.example.data.local.AppDatabase
 import com.example.data.model.Grade
 import com.example.data.model.Question
@@ -52,6 +54,7 @@ import com.example.ui.screens.UnlockQuizScreen
 import com.example.ui.screens.UnlockResultScreen
 import com.example.ui.screens.WrongBookScreen
 import com.example.ui.theme.PrimaryStudyTheme
+import kotlinx.coroutines.launch
 
 enum class MainTab(val title: String) {
     HOME("解锁关卡"),
@@ -79,8 +82,14 @@ class MainActivity : ComponentActivity() {
         val repository = StudyRepository(
             wrongQuestionDao = database.wrongQuestionDao(),
             unlockRecordDao = database.unlockRecordDao(),
-            learningPathDao = database.learningPathDao()
+            learningPathDao = database.learningPathDao(),
+            bankQuestionDao = database.bankQuestionDao()
         )
+
+        // Asynchronously initialize question bank if empty
+        lifecycleScope.launch {
+            repository.initializeQuestionBankIfNeeded()
+        }
 
         // Check if opened from lock screen trigger
         checkIntentForForceQuiz(intent)
@@ -130,11 +139,13 @@ class MainActivity : ComponentActivity() {
 
     private fun startLockScreenService() {
         val serviceIntent = Intent(this, LockScreenService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+        } catch (_: Exception) {}
     }
 
     private fun stopLockScreenService() {
@@ -147,6 +158,27 @@ class MainActivity : ComponentActivity() {
             startLockScreenService()
         } else {
             stopLockScreenService()
+        }
+    }
+
+    fun checkAndRequestOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "请开启「悬浮窗 / 在其他应用上层显示」权限，以便解锁时自动弹出答题！", Toast.LENGTH_LONG).show()
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(intent)
+        } else {
+            Toast.makeText(this, "悬浮窗权限已就绪！", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun hasOverlayPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(this)
+        } else {
+            true
         }
     }
 }
@@ -177,7 +209,6 @@ fun MainAppContainer(
     // Android back handler handling
     BackHandler(enabled = screenState !is ScreenState.MainTabScreen || currentTab != MainTab.HOME) {
         if (screenState !is ScreenState.MainTabScreen) {
-            // If device is not yet unlocked, do not dismiss quiz casually
             if (isDeviceUnlocked) {
                 screenState = ScreenState.MainTabScreen
             }
@@ -261,7 +292,11 @@ fun MainAppContainer(
                             isAutoPopupEnabled = isAutoPopupEnabled,
                             onToggleAutoPopup = { enabled ->
                                 isAutoPopupEnabled = enabled
-                                (context as? MainActivity)?.toggleLockScreenService(enabled)
+                                val act = context as? MainActivity
+                                act?.toggleLockScreenService(enabled)
+                                if (enabled && act?.hasOverlayPermission() == false) {
+                                    act.checkAndRequestOverlayPermission()
+                                }
                             },
                             onStartUnlockQuiz = {
                                 screenState = ScreenState.QuizSession(null)
@@ -300,6 +335,7 @@ fun MainAppContainer(
                     MainTab.KNOWLEDGE -> {
                         KnowledgeBaseScreen(
                             currentGrade = selectedGrade,
+                            repository = repository,
                             modifier = Modifier.padding(innerPadding)
                         )
                     }

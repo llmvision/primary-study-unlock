@@ -59,6 +59,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -94,6 +95,7 @@ fun HomeScreen(
     val unmasteredWrongCount by repository.unmasteredCount.collectAsState(initial = 0)
     val totalSuccessUnlocks by repository.totalSuccessfulUnlocks.collectAsState(initial = 0)
     val recentRecords by repository.recentRecords.collectAsState(initial = emptyList())
+    val context = LocalContext.current
 
     Column(
         modifier = modifier
@@ -297,44 +299,74 @@ fun HomeScreen(
                             .clip(RoundedCornerShape(12.dp)),
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Smartphone,
-                                    contentDescription = null,
-                                    tint = if (isAutoPopupEnabled) IndigoPrimary else Color.Gray,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = "手机解锁自动弹出答题",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Smartphone,
+                                        contentDescription = null,
+                                        tint = if (isAutoPopupEnabled) IndigoPrimary else Color.Gray,
+                                        modifier = Modifier.size(20.dp)
                                     )
-                                    Text(
-                                        text = if (isAutoPopupEnabled) "已开启：点亮屏幕解锁时强制弹窗" else "已暂停：仅应用内通关",
-                                        fontSize = 11.sp,
-                                        color = if (isAutoPopupEnabled) IndigoPrimary else Color.Gray
-                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = "手机解锁自动弹出答题",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = if (isAutoPopupEnabled) "已开启：点亮屏幕解锁时强制弹窗" else "已暂停：仅应用内通关",
+                                            fontSize = 11.sp,
+                                            color = if (isAutoPopupEnabled) IndigoPrimary else Color.Gray
+                                        )
+                                    }
                                 }
+
+                                Switch(
+                                    checked = isAutoPopupEnabled,
+                                    onCheckedChange = onToggleAutoPopup,
+                                    colors = SwitchDefaults.colors(checkedThumbColor = IndigoPrimary)
+                                )
                             }
 
-                            Switch(
-                                checked = isAutoPopupEnabled,
-                                onCheckedChange = onToggleAutoPopup,
-                                colors = SwitchDefaults.colors(checkedThumbColor = IndigoPrimary)
-                            )
+                            if (isAutoPopupEnabled) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "💡 若未自动弹窗，请开启「悬浮窗」权限",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFFB45309)
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = IndigoPrimary.copy(alpha = 0.1f),
+                                        modifier = Modifier.clickable {
+                                            (context as? com.example.MainActivity)?.checkAndRequestOverlayPermission()
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "检查权限",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = IndigoPrimary,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 

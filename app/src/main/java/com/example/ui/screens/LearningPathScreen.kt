@@ -94,8 +94,10 @@ fun LearningPathScreen(
     )
 
     val currentPlan by repository.currentLearningPlan.collectAsState(initial = null)
-    val adaptivePractices = remember(diagnosticResult) {
-        repository.getAdaptiveRecommendations(diagnosticResult)
+    var adaptivePractices by remember { mutableStateOf<List<RecommendedPractice>>(emptyList()) }
+
+    androidx.compose.runtime.LaunchedEffect(diagnosticResult) {
+        adaptivePractices = repository.getAdaptiveRecommendations(diagnosticResult)
     }
 
     LazyColumn(

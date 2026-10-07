@@ -76,9 +76,17 @@ fun UnlockQuizScreen(
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
-    // Quiz session questions
-    val quizQuestions = remember(grade, customQuestions) {
-        customQuestions?.ifEmpty { null } ?: QuestionBank.getRandomQuiz(grade, count = 3)
+    var quizQuestions by remember(grade, customQuestions) {
+        mutableStateOf(customQuestions?.ifEmpty { null } ?: QuestionBank.getRandomQuiz(grade, count = 3))
+    }
+
+    androidx.compose.runtime.LaunchedEffect(grade, customQuestions) {
+        if (customQuestions == null || customQuestions.isEmpty()) {
+            val dbQuestions = repository.getRandomQuiz(grade, count = 3)
+            if (dbQuestions.isNotEmpty()) {
+                quizQuestions = dbQuestions
+            }
+        }
     }
 
     var currentIndex by remember { mutableStateOf(0) }

@@ -10,15 +10,17 @@ import androidx.room.RoomDatabase
         WrongQuestionEntity::class,
         UnlockRecordEntity::class,
         AnswerLogEntity::class,
-        LearningPlanEntity::class
+        LearningPlanEntity::class,
+        BankQuestionEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun wrongQuestionDao(): WrongQuestionDao
     abstract fun unlockRecordDao(): UnlockRecordDao
     abstract fun learningPathDao(): LearningPathDao
+    abstract fun bankQuestionDao(): BankQuestionDao
 
     companion object {
         @Volatile
