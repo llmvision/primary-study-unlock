@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MilitaryTech
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -45,6 +47,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -78,6 +82,8 @@ fun HomeScreen(
     onGradeChange: (Grade) -> Unit,
     repository: StudyRepository,
     isDeviceUnlocked: Boolean,
+    isAutoPopupEnabled: Boolean,
+    onToggleAutoPopup: (Boolean) -> Unit,
     onStartUnlockQuiz: () -> Unit,
     onLockDevice: () -> Unit,
     onNavigateToWrongBook: () -> Unit,
@@ -283,6 +289,56 @@ fun HomeScreen(
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
+
+                    // Auto-popup switch control
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp)),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Smartphone,
+                                    contentDescription = null,
+                                    tint = if (isAutoPopupEnabled) IndigoPrimary else Color.Gray,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "手机解锁自动弹出答题",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = if (isAutoPopupEnabled) "已开启：点亮屏幕解锁时强制弹窗" else "已暂停：仅应用内通关",
+                                        fontSize = 11.sp,
+                                        color = if (isAutoPopupEnabled) IndigoPrimary else Color.Gray
+                                    )
+                                }
+                            }
+
+                            Switch(
+                                checked = isAutoPopupEnabled,
+                                onCheckedChange = onToggleAutoPopup,
+                                colors = SwitchDefaults.colors(checkedThumbColor = IndigoPrimary)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     if (!isDeviceUnlocked) {
                         Button(

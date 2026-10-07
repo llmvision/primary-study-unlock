@@ -1,6 +1,13 @@
 package com.example
 
+import android.app.KeyguardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -25,16 +32,19 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import com.example.data.local.AppDatabase
 import com.example.data.model.Grade
 import com.example.data.model.Question
 import com.example.data.repository.StudyRepository
+import com.example.service.LockScreenService
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.KnowledgeBaseScreen
 import com.example.ui.screens.LearningPathScreen
@@ -57,9 +67,13 @@ sealed class ScreenState {
 }
 
 class MainActivity : ComponentActivity() {
+
+    private val forceQuizTrigger = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        configureLockScreenWindowFlags()
 
         val database = AppDatabase.getDatabase(this)
         val repository = StudyRepository(
@@ -68,10 +82,71 @@ class MainActivity : ComponentActivity() {
             learningPathDao = database.learningPathDao()
         )
 
+        // Check if opened from lock screen trigger
+        checkIntentForForceQuiz(intent)
+
+        // Auto start lock screen service if not running
+        startLockScreenService()
+
         setContent {
             PrimaryStudyTheme {
-                MainAppContainer(repository = repository)
+                MainAppContainer(
+                    repository = repository,
+                    forceQuizRequested = forceQuizTrigger.value,
+                    onForceQuizConsumed = { forceQuizTrigger.value = false }
+                )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        checkIntentForForceQuiz(intent)
+    }
+
+    private fun checkIntentForForceQuiz(intent: Intent?) {
+        if (intent?.getBooleanExtra("FORCE_UNLOCK_QUIZ", false) == true) {
+            forceQuizTrigger.value = true
+        }
+    }
+
+    private fun configureLockScreenWindowFlags() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+            keyguardManager?.requestDismissKeyguard(this, null)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                        WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+            )
+        }
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun startLockScreenService() {
+        val serviceIntent = Intent(this, LockScreenService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+    }
+
+    private fun stopLockScreenService() {
+        val serviceIntent = Intent(this, LockScreenService::class.java)
+        stopService(serviceIntent)
+    }
+
+    fun toggleLockScreenService(enabled: Boolean) {
+        if (enabled) {
+            startLockScreenService()
+        } else {
+            stopLockScreenService()
         }
     }
 }
@@ -79,17 +154,33 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainAppContainer(
     repository: StudyRepository,
+    forceQuizRequested: Boolean,
+    onForceQuizConsumed: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var selectedGrade by remember { mutableStateOf(Grade.GRADE_4) }
     var currentTab by remember { mutableStateOf(MainTab.HOME) }
     var screenState by remember { mutableStateOf<ScreenState>(ScreenState.MainTabScreen) }
     var isDeviceUnlocked by remember { mutableStateOf(false) }
+    var isAutoPopupEnabled by remember { mutableStateOf(true) }
+
+    // When phone unlocked broadcast triggers, launch force quiz immediately
+    LaunchedEffect(forceQuizRequested) {
+        if (forceQuizRequested) {
+            isDeviceUnlocked = false
+            screenState = ScreenState.QuizSession(null)
+            onForceQuizConsumed()
+        }
+    }
 
     // Android back handler handling
     BackHandler(enabled = screenState !is ScreenState.MainTabScreen || currentTab != MainTab.HOME) {
         if (screenState !is ScreenState.MainTabScreen) {
-            screenState = ScreenState.MainTabScreen
+            // If device is not yet unlocked, do not dismiss quiz casually
+            if (isDeviceUnlocked) {
+                screenState = ScreenState.MainTabScreen
+            }
         } else if (currentTab != MainTab.HOME) {
             currentTab = MainTab.HOME
         }
@@ -167,6 +258,11 @@ fun MainAppContainer(
                             onGradeChange = { selectedGrade = it },
                             repository = repository,
                             isDeviceUnlocked = isDeviceUnlocked,
+                            isAutoPopupEnabled = isAutoPopupEnabled,
+                            onToggleAutoPopup = { enabled ->
+                                isAutoPopupEnabled = enabled
+                                (context as? MainActivity)?.toggleLockScreenService(enabled)
+                            },
                             onStartUnlockQuiz = {
                                 screenState = ScreenState.QuizSession(null)
                             },
