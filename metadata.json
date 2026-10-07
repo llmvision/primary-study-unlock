@@ -1,0 +1,6 @@
+{
+  "name": "知识通关锁",
+  "description": "专为小学4-6年级打造的知识解锁学习应用，涵盖语文作文、数学思维与英语核心知识，支持答题通关、错题回顾与深度解析。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
